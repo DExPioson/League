@@ -1,0 +1,224 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  ADMIN
+  CAPTAIN
+  PLAYER
+}
+
+enum SeasonStatus {
+  DRAFT
+  ACTIVE
+  ARCHIVED
+}
+
+enum AuctionStatus {
+  NOT_STARTED
+  LIVE
+  PAUSED
+  COMPLETED
+}
+
+enum TransferWindowStatus {
+  CLOSED
+  OPEN
+}
+
+enum PlayerStatus {
+  REGISTERED
+  IN_AUCTION
+  SOLD
+  UNSOLD
+  TRANSFERRED
+  UNAVAILABLE
+}
+
+enum TransferStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+  APPROVED
+  CANCELLED
+  COMPLETED
+}
+
+model User {
+  id           String   @id @default(uuid())
+  name         String
+  email        String   @unique
+  passwordHash String
+  role         UserRole
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  captainProfile Captain?
+  playerProfile  Player?
+}
+
+model Season {
+  id                   String               @id @default(uuid())
+  name                 String
+  status               SeasonStatus         @default(DRAFT)
+  budgetPerCaptain     Int
+  transferLimit        Int                  @default(2)
+  auctionStatus        AuctionStatus        @default(NOT_STARTED)
+  transferWindowStatus TransferWindowStatus @default(CLOSED)
+  createdAt            DateTime             @default(now())
+  updatedAt            DateTime             @updatedAt
+
+  players   Player[]
+  captains  Captain[]
+  teams     Team[]
+  bids      Bid[]
+  auctions  Auction[]
+  transfers TransferRequest[]
+}
+
+model Player {
+  id            String       @id @default(uuid())
+  userId        String?      @unique
+  seasonId      String
+  name          String
+  age           Int?
+  position      String
+  preferredFoot String?
+  rating        Float?
+  basePrice     Int
+  soldPrice     Int?
+  photo         String?
+  notes         String?
+  status        PlayerStatus @default(REGISTERED)
+  currentTeamId String?
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+
+  user        User?  @relation(fields: [userId], references: [id])
+  season      Season @relation(fields: [seasonId], references: [id])
+  currentTeam Team?  @relation(fields: [currentTeamId], references: [id])
+  bids        Bid[]
+
+  @@index([seasonId])
+  @@index([status])
+  @@index([currentTeamId])
+}
+
+model Captain {
+  id              String   @id @default(uuid())
+  userId          String   @unique
+  seasonId        String
+  teamId          String?  @unique
+  startingBudget  Int
+  spentAmount     Int      @default(0)
+  remainingBudget Int
+  transfersUsed   Int      @default(0)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  user   User   @relation(fields: [userId], references: [id])
+  season Season @relation(fields: [seasonId], references: [id])
+  team   Team?
+  bids   Bid[]
+
+  @@index([seasonId])
+}
+
+model Team {
+  id        String   @id @default(uuid())
+  seasonId  String
+  captainId String   @unique
+  name      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  season  Season   @relation(fields: [seasonId], references: [id])
+  captain Captain  @relation(fields: [captainId], references: [id])
+  players Player[]
+
+  @@index([seasonId])
+}
+
+model Auction {
+  id              String        @id @default(uuid())
+  seasonId        String
+  currentPlayerId String?
+  status          AuctionStatus @default(NOT_STARTED)
+  timerSeconds    Int?
+  startedAt       DateTime?
+  endedAt         DateTime?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  season Season @relation(fields: [seasonId], references: [id])
+}
+
+model Bid {
+  id        String   @id @default(uuid())
+  seasonId  String
+  playerId  String
+  captainId String
+  amount    Int
+  createdAt DateTime @default(now())
+
+  season  Season  @relation(fields: [seasonId], references: [id])
+  player  Player  @relation(fields: [playerId], references: [id])
+  captain Captain @relation(fields: [captainId], references: [id])
+
+  @@index([seasonId])
+  @@index([playerId])
+  @@index([captainId])
+}
+
+model AuctionResult {
+  id               String   @id @default(uuid())
+  seasonId         String
+  playerId         String
+  winningCaptainId String?
+  winningBid       Int?
+  resultType       String
+  createdAt        DateTime @default(now())
+}
+
+model TransferRequest {
+  id            String         @id @default(uuid())
+  seasonId      String
+  playerId      String
+  fromCaptainId String
+  toCaptainId   String
+  requestedById String
+  reason        String?
+  status        TransferStatus @default(PENDING)
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+
+  season Season @relation(fields: [seasonId], references: [id])
+
+  @@index([seasonId])
+  @@index([status])
+}
+
+model TransferHistory {
+  id            String   @id @default(uuid())
+  transferId    String
+  playerId      String
+  fromCaptainId String
+  toCaptainId   String
+  completedAt   DateTime @default(now())
+}
+
+model AuditLog {
+  id         String   @id @default(uuid())
+  userId     String
+  role       String
+  action     String
+  entityType String
+  entityId   String?
+  metadata   Json?
+  createdAt  DateTime @default(now())
+}
