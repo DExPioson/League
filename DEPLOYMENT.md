@@ -8,7 +8,10 @@ This repo is split into:
 
 ## Supabase
 
-Create a new Supabase project, then copy its Postgres connection strings:
+The Supabase project is `League` (`yahxuedqwurrfmsjtzal`) in `ap-south-1`.
+Its schema migration and demo seed data have already been applied.
+
+Copy its Postgres connection strings from Supabase:
 
 - `DATABASE_URL`: the pooled connection string for runtime queries
 - `DIRECT_URL`: the direct connection string for Prisma migrations
@@ -23,7 +26,7 @@ Use the root `render.yaml` Blueprint. During Blueprint creation, fill these secr
 - `DIRECT_URL`
 - `FRONTEND_URL`, after the Vercel URL is known
 
-The backend exposes `/api/health` for Render health checks. Startup runs `prisma migrate deploy` before `npm run start:prod`.
+The backend exposes `/api/health` for Render health checks.
 
 ## Vercel Frontend
 
