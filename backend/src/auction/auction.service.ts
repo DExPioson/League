@@ -66,7 +66,31 @@ export class AuctionService {
     return { success: true };
   }
 
+  static readonly MIN_PLAYERS_PER_CAPTAIN = 6;
+
   async endAuction(seasonId: string) {
+    // Validate minimum 6 players per captain before ending
+    const captains = await this.prisma.captain.findMany({
+      where: { seasonId },
+      include: {
+        user: { select: { name: true } },
+        team: { include: { _count: { select: { players: true } } } },
+      },
+    });
+
+    const underMinimum = captains.filter(
+      (c) => (c.team?._count?.players || 0) < AuctionService.MIN_PLAYERS_PER_CAPTAIN,
+    );
+
+    if (underMinimum.length > 0) {
+      const details = underMinimum
+        .map((c) => `${c.user.name} (${c.team?._count?.players || 0}/${AuctionService.MIN_PLAYERS_PER_CAPTAIN})`)
+        .join(', ');
+      throw new BadRequestException(
+        `Cannot end auction: Each captain needs at least ${AuctionService.MIN_PLAYERS_PER_CAPTAIN} players. Under limit: ${details}`,
+      );
+    }
+
     await this.prisma.season.update({
       where: { id: seasonId },
       data: { auctionStatus: AuctionStatus.COMPLETED },
@@ -164,10 +188,20 @@ export class AuctionService {
       include: { captain: { include: { user: { select: { name: true } } } } },
     });
 
+    // Clear currentPlayerId on the auction record so getState() no longer returns this player
+    const auction = await this.getActiveAuction(seasonId);
+    if (auction) {
+      await this.prisma.auction.update({
+        where: { id: auction.id },
+        data: { currentPlayerId: null, timerSeconds: null },
+      });
+    }
+
     if (highestBid) {
       return this.prisma.$transaction(async (tx) => {
-        const captain = await tx.captain.findUnique({
-          where: { id: highestBid.captainId },
+        // Look up team by captainId (the FK is on Team side, not Captain)
+        const team = await tx.team.findUnique({
+          where: { captainId: highestBid.captainId },
         });
 
         await tx.player.update({
@@ -175,7 +209,7 @@ export class AuctionService {
           data: {
             status: PlayerStatus.SOLD,
             soldPrice: highestBid.amount,
-            currentTeamId: captain!.teamId,
+            currentTeamId: team?.id || null,
           },
         });
 
@@ -244,7 +278,10 @@ export class AuctionService {
 
     const captains = await this.prisma.captain.findMany({
       where: { seasonId },
-      include: { user: { select: { name: true } }, team: { select: { name: true } } },
+      include: {
+        user: { select: { name: true } },
+        team: { select: { name: true, _count: { select: { players: true } } } },
+      },
     });
 
     return {
@@ -263,8 +300,10 @@ export class AuctionService {
         teamName: c.team?.name,
         remainingBudget: c.remainingBudget,
         spentAmount: c.spentAmount,
+        playerCount: c.team?._count?.players || 0,
       })),
       timerSeconds: auction?.timerSeconds,
+      minPlayersPerCaptain: AuctionService.MIN_PLAYERS_PER_CAPTAIN,
     };
   }
 

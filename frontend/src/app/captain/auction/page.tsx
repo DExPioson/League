@@ -1,21 +1,25 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useEffect, useState, useCallback, useRef } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { DashboardLayout } from '@/components/layout/dashboard-layout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
+import { cn } from '@/lib/utils';
 import api from '@/lib/api';
 import { getSocket, disconnectSocket } from '@/lib/socket';
 import { AuctionState, Season } from '@/types';
 import { toast } from 'sonner';
-import { Gavel, DollarSign, TrendingUp } from 'lucide-react';
+import { Gavel, DollarSign, TrendingUp, Timer } from 'lucide-react';
 
 export default function CaptainAuctionPage() {
+  const queryClient = useQueryClient();
   const [bidAmount, setBidAmount] = useState('');
   const [liveState, setLiveState] = useState<AuctionState | null>(null);
+  const [countdown, setCountdown] = useState<number | null>(null);
+  const countdownRef = useRef<NodeJS.Timeout | null>(null);
 
   const { data: season } = useQuery<Season>({
     queryKey: ['active-season'],
@@ -30,6 +34,28 @@ export default function CaptainAuctionPage() {
 
   const state = liveState || auctionState;
 
+  const startCountdown = useCallback((endsAt: number) => {
+    if (countdownRef.current) clearInterval(countdownRef.current);
+    const tick = () => {
+      const remaining = Math.max(0, Math.ceil((endsAt - Date.now()) / 1000));
+      setCountdown(remaining);
+      if (remaining <= 0 && countdownRef.current) {
+        clearInterval(countdownRef.current);
+        countdownRef.current = null;
+      }
+    };
+    tick();
+    countdownRef.current = setInterval(tick, 200);
+  }, []);
+
+  const clearCountdown = useCallback(() => {
+    if (countdownRef.current) {
+      clearInterval(countdownRef.current);
+      countdownRef.current = null;
+    }
+    setCountdown(null);
+  }, []);
+
   useEffect(() => {
     if (!season?.id) return;
 
@@ -37,7 +63,15 @@ export default function CaptainAuctionPage() {
     socket.connect();
     socket.emit('auction:join', { seasonId: season.id });
 
-    socket.on('auction:state', (data: AuctionState) => setLiveState(data));
+    socket.on('auction:state', (data: AuctionState) => {
+      setLiveState(data);
+      if (data.timerEndsAt) {
+        startCountdown(data.timerEndsAt);
+      } else {
+        clearCountdown();
+      }
+    });
+
     socket.on('auction:bid-placed', (data: any) => {
       setLiveState((prev) =>
         prev
@@ -51,16 +85,35 @@ export default function CaptainAuctionPage() {
             }
           : null,
       );
+      if (data.timerEndsAt) {
+        startCountdown(data.timerEndsAt);
+      }
     });
+
     socket.on('auction:bid-rejected', (data: any) => {
       toast.error(data.message);
+    });
+
+    socket.on('auction:player-closed', (data: any) => {
+      clearCountdown();
+      if (data.resultType === 'SOLD') {
+        toast.success(`${data.autoClose ? '⏱ Auto-sold' : 'Sold'}: Player to ${data.winnerName} for ₹${data.amount?.toLocaleString()}`);
+      } else {
+        toast.info(data.autoClose ? '⏱ Timer expired — Player unsold' : 'Player unsold');
+      }
+      queryClient.invalidateQueries({ queryKey: ['auction-state'] });
     });
 
     return () => {
       socket.emit('auction:leave', { seasonId: season.id });
       disconnectSocket();
+      clearCountdown();
     };
-  }, [season?.id]);
+  }, [season?.id, startCountdown, clearCountdown, queryClient]);
+
+  useEffect(() => {
+    return () => clearCountdown();
+  }, [clearCountdown]);
 
   const placeBid = useCallback(() => {
     if (!season?.id || !state?.currentPlayer || !bidAmount) return;
@@ -109,7 +162,7 @@ export default function CaptainAuctionPage() {
           </Badge>
         </div>
 
-        {state?.currentPlayer ? (
+        {state?.currentPlayer && state.currentPlayer.status === 'IN_AUCTION' ? (
           <Card className="border-green-600/30 bg-zinc-900">
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-yellow-400">
@@ -124,19 +177,43 @@ export default function CaptainAuctionPage() {
                   </h2>
                   <p className="text-zinc-400">
                     {state.currentPlayer.position} &middot; Rating: {state.currentPlayer.rating || 'N/A'} &middot;
-                    Base: {state.currentPlayer.basePrice.toLocaleString()}
+                    Base: ₹{state.currentPlayer.basePrice.toLocaleString()}
                   </p>
                 </div>
                 <div className="text-right">
                   <p className="text-sm text-zinc-400">Highest Bid</p>
                   <p className="text-4xl font-bold text-green-400">
-                    {state.highestBid ? state.highestBid.amount.toLocaleString() : '-'}
+                    {state.highestBid ? `₹${state.highestBid.amount.toLocaleString()}` : '-'}
                   </p>
                   {state.highestBid && (
                     <p className="text-sm text-zinc-400">by {state.highestBid.captainName}</p>
                   )}
                 </div>
               </div>
+
+              {/* Countdown Timer */}
+              {countdown !== null && countdown > 0 && (
+                <div className="flex items-center gap-3">
+                  <Timer className={cn('h-5 w-5', countdown <= 3 ? 'text-red-400 animate-pulse' : 'text-yellow-400')} />
+                  <div className="flex-1">
+                    <div className="flex items-center justify-between mb-1">
+                      <span className={cn('text-sm font-semibold', countdown <= 3 ? 'text-red-400' : 'text-yellow-400')}>
+                        {countdown}s remaining
+                      </span>
+                      <span className="text-xs text-zinc-500">Bid now or lose out!</span>
+                    </div>
+                    <div className="h-2 w-full rounded-full bg-zinc-800 overflow-hidden">
+                      <div
+                        className={cn(
+                          'h-full rounded-full transition-all duration-200',
+                          countdown <= 3 ? 'bg-red-500' : 'bg-yellow-500',
+                        )}
+                        style={{ width: `${(countdown / 10) * 100}%` }}
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {state.auctionStatus === 'LIVE' && (
                 <div className="space-y-4">
@@ -195,10 +272,10 @@ export default function CaptainAuctionPage() {
                     </div>
                     <div className="text-right">
                       <p className="text-lg font-bold text-green-400">
-                        {c.remainingBudget.toLocaleString()}
+                        ₹{c.remainingBudget.toLocaleString()}
                       </p>
                       <p className="text-xs text-zinc-500">
-                        spent: {c.spentAmount.toLocaleString()}
+                        spent: ₹{c.spentAmount.toLocaleString()}
                       </p>
                     </div>
                   </div>

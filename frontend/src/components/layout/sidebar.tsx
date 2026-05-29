@@ -2,8 +2,11 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { useQuery } from '@tanstack/react-query';
 import { cn } from '@/lib/utils';
 import { useAuthStore } from '@/stores/authStore';
+import api from '@/lib/api';
+import { Season } from '@/types';
 import {
   LayoutDashboard,
   Users,
@@ -16,23 +19,30 @@ import {
   Shield,
 } from 'lucide-react';
 
-const adminLinks = [
+interface SidebarLink {
+  href: string;
+  label: string;
+  icon: React.ComponentType<{ className?: string }>;
+  auctionLink?: boolean;
+}
+
+const adminLinks: SidebarLink[] = [
   { href: '/admin/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/admin/seasons', label: 'Seasons', icon: Calendar },
   { href: '/admin/players', label: 'Players', icon: Users },
   { href: '/admin/captains', label: 'Captains', icon: Shield },
-  { href: '/admin/auction', label: 'Auction', icon: Gavel },
+  { href: '/admin/auction', label: 'Auction', icon: Gavel, auctionLink: true },
   { href: '/admin/transfers', label: 'Transfers', icon: ArrowLeftRight },
 ];
 
-const captainLinks = [
+const captainLinks: SidebarLink[] = [
   { href: '/captain/dashboard', label: 'Dashboard', icon: LayoutDashboard },
-  { href: '/captain/auction', label: 'Auction Room', icon: Gavel },
+  { href: '/captain/auction', label: 'Auction Room', icon: Gavel, auctionLink: true },
   { href: '/captain/team', label: 'My Team', icon: Trophy },
   { href: '/captain/transfers', label: 'Transfers', icon: ArrowLeftRight },
 ];
 
-const playerLinks = [
+const playerLinks: SidebarLink[] = [
   { href: '/player/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/player/profile', label: 'Profile', icon: User },
 ];
@@ -40,6 +50,16 @@ const playerLinks = [
 export function Sidebar() {
   const pathname = usePathname();
   const { user, logout } = useAuthStore();
+
+  // Query active season to check auction status for LIVE indicator
+  const { data: season } = useQuery<Season>({
+    queryKey: ['active-season'],
+    queryFn: () => api.get('/seasons/active').then((r) => r.data),
+    refetchInterval: 5000,
+    retry: false,
+  });
+
+  const isAuctionLive = season?.auctionStatus === 'LIVE';
 
   const links =
     user?.role === 'ADMIN'
@@ -64,6 +84,7 @@ export function Sidebar() {
         {links.map((link) => {
           const Icon = link.icon;
           const active = pathname === link.href;
+          const showLive = 'auctionLink' in link && link.auctionLink && isAuctionLive;
           return (
             <Link
               key={link.href}
@@ -77,6 +98,15 @@ export function Sidebar() {
             >
               <Icon className="h-4 w-4" />
               {link.label}
+              {showLive && (
+                <span className="ml-auto flex items-center gap-1.5">
+                  <span className="relative flex h-2.5 w-2.5">
+                    <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-green-400 opacity-75" />
+                    <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-green-500" />
+                  </span>
+                  <span className="text-xs font-semibold text-green-400">LIVE</span>
+                </span>
+              )}
             </Link>
           );
         })}

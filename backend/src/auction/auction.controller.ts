@@ -11,19 +11,23 @@ import { RolesGuard } from '../common/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { AuctionService } from './auction.service';
-import { IsUUID, IsNumber, Min, IsOptional } from 'class-validator';
+import { AuctionGateway } from './auction.gateway';
+import { IsString, IsNumber, Min, IsOptional, Matches } from 'class-validator';
 import { PrismaService } from '../prisma/prisma.service';
 
 class StartAuctionDto {
-  @IsUUID()
+  @IsString()
+  @Matches(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)
   seasonId: string;
 }
 
 class OpenPlayerDto {
-  @IsUUID()
+  @IsString()
+  @Matches(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)
   seasonId: string;
 
-  @IsUUID()
+  @IsString()
+  @Matches(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)
   playerId: string;
 
   @IsOptional()
@@ -33,10 +37,12 @@ class OpenPlayerDto {
 }
 
 class PlaceBidDto {
-  @IsUUID()
+  @IsString()
+  @Matches(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)
   seasonId: string;
 
-  @IsUUID()
+  @IsString()
+  @Matches(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)
   playerId: string;
 
   @IsNumber()
@@ -45,10 +51,12 @@ class PlaceBidDto {
 }
 
 class ClosePlayerDto {
-  @IsUUID()
+  @IsString()
+  @Matches(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)
   seasonId: string;
 
-  @IsUUID()
+  @IsString()
+  @Matches(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)
   playerId: string;
 }
 
@@ -57,37 +65,48 @@ class ClosePlayerDto {
 export class AuctionController {
   constructor(
     private auctionService: AuctionService,
+    private auctionGateway: AuctionGateway,
     private prisma: PrismaService,
   ) {}
 
   @Post('start')
   @Roles('ADMIN')
-  start(@Body() dto: StartAuctionDto) {
-    return this.auctionService.startAuction(dto.seasonId);
+  async start(@Body() dto: StartAuctionDto) {
+    const result = await this.auctionService.startAuction(dto.seasonId);
+    await this.auctionGateway.broadcastAuctionStatusChange(dto.seasonId);
+    return result;
   }
 
   @Post('pause')
   @Roles('ADMIN')
-  pause(@Body() dto: StartAuctionDto) {
-    return this.auctionService.pauseAuction(dto.seasonId);
+  async pause(@Body() dto: StartAuctionDto) {
+    const result = await this.auctionService.pauseAuction(dto.seasonId);
+    await this.auctionGateway.broadcastAuctionStatusChange(dto.seasonId);
+    return result;
   }
 
   @Post('resume')
   @Roles('ADMIN')
-  resume(@Body() dto: StartAuctionDto) {
-    return this.auctionService.resumeAuction(dto.seasonId);
+  async resume(@Body() dto: StartAuctionDto) {
+    const result = await this.auctionService.resumeAuction(dto.seasonId);
+    await this.auctionGateway.broadcastAuctionStatusChange(dto.seasonId);
+    return result;
   }
 
   @Post('end')
   @Roles('ADMIN')
-  end(@Body() dto: StartAuctionDto) {
-    return this.auctionService.endAuction(dto.seasonId);
+  async end(@Body() dto: StartAuctionDto) {
+    const result = await this.auctionService.endAuction(dto.seasonId);
+    await this.auctionGateway.broadcastAuctionStatusChange(dto.seasonId);
+    return result;
   }
 
   @Post('open-player')
   @Roles('ADMIN')
-  openPlayer(@Body() dto: OpenPlayerDto) {
-    return this.auctionService.openPlayer(dto.seasonId, dto.playerId, dto.timerSeconds);
+  async openPlayer(@Body() dto: OpenPlayerDto) {
+    const result = await this.auctionService.openPlayer(dto.seasonId, dto.playerId, dto.timerSeconds);
+    await this.auctionGateway.broadcastPlayerOpened(dto.seasonId);
+    return result;
   }
 
   @Post('place-bid')
@@ -102,14 +121,18 @@ export class AuctionController {
 
   @Post('close-player')
   @Roles('ADMIN')
-  closePlayer(@Body() dto: ClosePlayerDto) {
-    return this.auctionService.closePlayer(dto.seasonId, dto.playerId);
+  async closePlayer(@Body() dto: ClosePlayerDto) {
+    const result = await this.auctionService.closePlayer(dto.seasonId, dto.playerId);
+    await this.auctionGateway.broadcastPlayerClosed(dto.seasonId, result);
+    return result;
   }
 
   @Get('state/:seasonId')
   @Roles('ADMIN', 'CAPTAIN', 'PLAYER')
-  getState(@Param('seasonId') seasonId: string) {
-    return this.auctionService.getState(seasonId);
+  async getState(@Param('seasonId') seasonId: string) {
+    const state = await this.auctionService.getState(seasonId);
+    const timerEndsAt = this.auctionGateway.getTimerEndsAt(seasonId);
+    return { ...state, timerEndsAt };
   }
 
   @Get('history/:seasonId')

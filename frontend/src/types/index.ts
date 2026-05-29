@@ -88,8 +88,12 @@ export interface AuctionState {
     teamName?: string;
     remainingBudget: number;
     spentAmount: number;
+    playerCount?: number;
   }>;
   timerSeconds?: number;
+  timerEndsAt?: number;
+  timerDuration?: number;
+  minPlayersPerCaptain?: number;
 }
 
 export interface AdminDashboard {

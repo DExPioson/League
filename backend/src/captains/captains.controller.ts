@@ -11,17 +11,19 @@ import { AuthGuard } from '@nestjs/passport';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
 import { CaptainsService } from './captains.service';
-import { IsNotEmpty, IsString, IsUUID } from 'class-validator';
+import { IsNotEmpty, IsString, Matches } from 'class-validator';
 
 class CreateCaptainDto {
-  @IsUUID()
+  @IsString()
+  @Matches(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)
   userId: string;
 
   @IsNotEmpty()
   @IsString()
   teamName: string;
 
-  @IsUUID()
+  @IsString()
+  @Matches(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)
   seasonId: string;
 }
 
@@ -52,6 +54,12 @@ export class CaptainsController {
   @Roles('ADMIN', 'CAPTAIN', 'PLAYER')
   getTeam(@Param('id') id: string) {
     return this.captainsService.getTeam(id);
+  }
+
+  @Get('previous/suggestions')
+  @Roles('ADMIN')
+  getPreviousCaptains(@Query('seasonId') seasonId?: string) {
+    return this.captainsService.getPreviousCaptains(seasonId);
   }
 
   @Get(':id/budget')

@@ -23,12 +23,13 @@ import {
   Min,
   IsArray,
   ValidateNested,
-  IsUUID,
+  Matches,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 
 class CreatePlayerDto {
-  @IsUUID()
+  @IsString()
+  @Matches(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)
   seasonId: string;
 
   @IsNotEmpty()
@@ -130,7 +131,8 @@ class ImportPlayerItem {
 }
 
 class ImportPlayersDto {
-  @IsUUID()
+  @IsString()
+  @Matches(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)
   seasonId: string;
 
   @IsArray()
